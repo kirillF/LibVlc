@@ -20,16 +20,21 @@
 
 package org.videolan.libvlc;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Locale;
+
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
-
-import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Locale;
 
 public class LibVlcUtil {
     public final static String TAG = "VLC/LibVLC/Util";
@@ -74,6 +79,11 @@ public class LibVlcUtil {
         return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT;
     }
 
+    public static boolean isLolliPopOrLater()
+    {
+        return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP;
+    }
+
     private static String errorMsg = null;
     private static boolean isCompatible = false;
     public static String getErrorMsg() {
@@ -95,18 +105,14 @@ public class LibVlcUtil {
         // If already checked return cached result
         if(errorMsg != null || isCompatible) return isCompatible;
 
-        ApplicationInfo applicationInfo = context.getApplicationInfo();
-        String libBasePath;
-        if ((applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0)
-            libBasePath = "/system";
-        else
-            libBasePath = applicationInfo.dataDir;
-        ElfData elf = readLib(libBasePath + "/lib/libvlcjni.so");
+        final File lib = searchLibrary(context);
+        if (lib == null)
+            return true;
+
+        ElfData elf = readLib(lib);
         if(elf == null) {
-            Log.e(TAG,
-                    "WARNING: Unable to read libvlcjni.so; cannot check device ABI!");
-            Log.e(TAG,
-                    "WARNING: Cannot guarantee correct ABI for this build (may crash)!");
+            Log.e(TAG, "WARNING: Unable to read libvlcjni.so; cannot check device ABI!");
+            Log.e(TAG, "WARNING: Cannot guarantee correct ABI for this build (may crash)!");
             return true;
         }
 
@@ -123,10 +129,8 @@ public class LibVlcUtil {
         final boolean elfHasMips = elf.e_machine == EM_MIPS;
         final boolean elfIs64bits = elf.is64bits;
 
-        Log.i(TAG,
-                "machine = " + (elfHasArm ? "arm" : elfHasX86 ? "x86" : "mips")
-                        + ", " +
-                        (elfIs64bits ? "64bits" : "32bits"));
+        Log.i(TAG, "machine = " + (elfHasArm ? "arm" : elfHasX86 ? "x86" : "mips") + ", " +
+                                  (elfIs64bits ? "64bits" : "32bits"));
         Log.i(TAG, "arch = " + elf.att_arch);
         Log.i(TAG, "fpu = " + elf.att_fpu);
         boolean hasNeon = false, hasFpu = false, hasArmV6 = false,
@@ -319,17 +323,44 @@ public class LibVlcUtil {
         boolean att_fpu;
     }
 
+    private static File searchLibrary(Context context) {
+        // Search for library path
+        String [] libraryPaths = null;
+        final ApplicationInfo applicationInfo = context.getApplicationInfo();
+
+        if ((applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+            final String property = System.getProperty("java.library.path");
+            libraryPaths = property.split(":");
+        } else {
+            libraryPaths = new String[1];
+            if (isGingerbreadOrLater())
+                libraryPaths[0] = applicationInfo.nativeLibraryDir;
+            else
+                libraryPaths[0] = applicationInfo.dataDir + "/lib";
+        }
+        if (libraryPaths == null) {
+            Log.e(TAG, "can't find library path");
+            return null;
+        }
+
+        // Search for libvlcjni.so
+        File lib = null;
+        for (String libraryPath : libraryPaths) {
+            lib = new File(libraryPath, "libvlcjni.so");
+            if (lib.exists() && lib.canRead())
+                return lib;;
+        }
+        Log.e(TAG, "WARNING: Can't find shared library");
+        return null;
+    }
+
     /** '*' prefix means it's unsupported */
     private static String[] CPU_archs = {"*Pre-v4", "*v4", "*v4T",
                                          "v5T", "v5TE", "v5TEJ",
                                          "v6", "v6KZ", "v6T2", "v6K", "v7",
                                          "*v6-M", "*v6S-M", "*v7E-M", "*v8"};
 
-    private static ElfData readLib(String path) {
-        File file = new File(path);
-        if (!file.exists() || !file.canRead())
-            return null;
-
+    private static ElfData readLib(File file) {
         RandomAccessFile in = null;
         try {
             in = new RandomAccessFile(file, "r");
@@ -372,8 +403,7 @@ public class LibVlcUtil {
         return null;
     }
 
-    private static boolean readHeader(RandomAccessFile in, ElfData elf) throws
-            IOException {
+    private static boolean readHeader(RandomAccessFile in, ElfData elf) throws IOException {
         // http://www.sco.com/developers/gabi/1998-04-29/ch4.eheader.html
         byte[] bytes = new byte[ELF_HEADER_SIZE];
         in.readFully(bytes);
@@ -401,8 +431,7 @@ public class LibVlcUtil {
         return true;
     }
 
-    private static boolean readSection(RandomAccessFile in, ElfData elf) throws
-            IOException {
+    private static boolean readSection(RandomAccessFile in, ElfData elf) throws IOException {
         byte[] bytes = new byte[SECTION_HEADER_SIZE];
         in.seek(elf.e_shoff);
 
@@ -425,8 +454,7 @@ public class LibVlcUtil {
         return false;
     }
 
-    private static boolean readArmAttributes(RandomAccessFile in, ElfData elf) throws
-            IOException {
+    private static boolean readArmAttributes(RandomAccessFile in, ElfData elf) throws IOException {
         byte[] bytes = new byte[elf.sh_size];
         in.seek(elf.sh_offset);
         in.readFully(bytes);

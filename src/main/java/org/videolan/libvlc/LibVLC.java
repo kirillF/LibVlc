@@ -20,14 +20,14 @@
 
 package org.videolan.libvlc;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Map;
+
 import android.content.Context;
 import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Map;
 
 public class LibVLC {
     private static final String TAG = "VLC/LibVLC";
@@ -37,6 +37,7 @@ public class LibVLC {
 
     public static final int VOUT_ANDROID_SURFACE = 0;
     public static final int VOUT_OPEGLES2 = 1;
+    public static final int VOUT_ANDROID_WINDOW = 2;
 
     public static final int HW_ACCELERATION_AUTOMATIC = -1;
     public static final int HW_ACCELERATION_DISABLED = 0;
@@ -49,7 +50,14 @@ public class LibVLC {
     public static final int DEV_HW_DECODER_MEDIACODEC = 2;
     public static final int DEV_HW_DECODER_MEDIACODEC_DR = 3;
 
+    public static final int INPUT_NAV_ACTIVATE = 0;
+    public static final int INPUT_NAV_UP = 1;
+    public static final int INPUT_NAV_DOWN = 2;
+    public static final int INPUT_NAV_LEFT = 3;
+    public static final int INPUT_NAV_RIGHT = 4;
+
     private static final String DEFAULT_CODEC_LIST = "mediacodec,iomx,all";
+    private static final boolean HAS_WINDOW_VOUT = LibVlcUtil.isGingerbreadOrLater();
 
     private static LibVLC sInstance;
 
@@ -107,17 +115,32 @@ public class LibVLC {
 
     /* Load library before object instantiation */
     static {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD_MR1) {
+            try {
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.HONEYCOMB_MR1)
+                    System.loadLibrary("anw.10");
+                else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.HONEYCOMB_MR2)
+                    System.loadLibrary("anw.13");
+                else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR1)
+                    System.loadLibrary("anw.14");
+                else
+                    System.loadLibrary("anw.18");
+            } catch (Throwable t) {
+                Log.w(TAG, "Unable to load the anw library: " + t);
+            }
+        }
+
         try {
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.GINGERBREAD_MR1)
-                System.loadLibrary("iomx-gingerbread");
+                System.loadLibrary("iomx.10");
             else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.HONEYCOMB_MR2)
-                System.loadLibrary("iomx-hc");
+                System.loadLibrary("iomx.13");
             else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR1)
-                System.loadLibrary("iomx-ics");
+                System.loadLibrary("iomx.14");
             else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR2)
-                System.loadLibrary("iomx-jbmr2");
+                System.loadLibrary("iomx.18");
             else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT)
-                System.loadLibrary("iomx-kk");
+                System.loadLibrary("iomx.19");
         } catch (Throwable t) {
             // No need to warn if it isn't found, when we intentionally don't build these except for debug
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1)
@@ -130,9 +153,7 @@ public class LibVLC {
             /// FIXME Alert user
             System.exit(1);
         } catch (SecurityException se) {
-            Log.e(TAG,
-                    "Encountered a security issue when loading vlcjni library: "
-                            + se);
+            Log.e(TAG, "Encountered a security issue when loading vlcjni library: " + se);
             /// FIXME Alert user
             System.exit(1);
         }
@@ -271,20 +292,17 @@ public class LibVLC {
                 // NONE
                 this.hardwareAcceleration = HW_ACCELERATION_DISABLED;
                 this.codecList = "all";
-                Log.d(TAG,
-                        "HWDec disabled: device not working with mediacodec,iomx");
+                Log.d(TAG, "HWDec disabled: device not working with mediacodec,iomx");
             } else if (decoder == HWDecoderUtil.Decoder.UNKNOWN) {
                 // UNKNOWN
                 if (hardwareAcceleration < 0) {
                     this.hardwareAcceleration = HW_ACCELERATION_DISABLED;
                     this.codecList = "all";
-                    Log.d(TAG,
-                            "HWDec disabled: automatic and (unknown device or android version < 4.3)");
+                    Log.d(TAG, "HWDec disabled: automatic and (unknown device or android version < 4.3)");
                 } else {
                     this.hardwareAcceleration = hardwareAcceleration;
                     this.codecList = DEFAULT_CODEC_LIST;
-                    Log.d(TAG,
-                            "HWDec enabled: forced by user and unknown device");
+                    Log.d(TAG, "HWDec enabled: forced by user and unknown device");
                 }
             } else {
                 // OMX, MEDIACODEC or ALL
@@ -301,8 +319,7 @@ public class LibVLC {
                     sb.append("all");
                     this.codecList = sb.toString();
                 }
-                Log.d(TAG,
-                        "HWDec enabled: device working with: " + this.codecList);
+                Log.d(TAG, "HWDec enabled: device working with: " + this.codecList);
             }
         }
     }
@@ -321,7 +338,7 @@ public class LibVLC {
                 this.devCodecList = "mediacodec";
 
             Log.d(TAG, "HWDec forced: " + this.devCodecList +
-                    (isDirectRendering() ? "-dr" : ""));
+                (isDirectRendering() ? "-dr" : ""));
             this.devCodecList += ",none";
         } else {
             this.devHardwareDecoder = DEV_HW_DECODER_AUTOMATIC;
@@ -330,6 +347,8 @@ public class LibVLC {
     }
 
     public boolean isDirectRendering() {
+        if (!HAS_WINDOW_VOUT)
+            return false;
         if (devHardwareDecoder != DEV_HW_DECODER_AUTOMATIC) {
             return (this.devHardwareDecoder == DEV_HW_DECODER_OMX_DR ||
                     this.devHardwareDecoder == DEV_HW_DECODER_MEDIACODEC_DR);
@@ -394,6 +413,12 @@ public class LibVLC {
             this.vout = VOUT_ANDROID_SURFACE;
         else
             this.vout = vout;
+        if (this.vout == VOUT_ANDROID_SURFACE && HAS_WINDOW_VOUT)
+            this.vout = VOUT_ANDROID_WINDOW;
+    }
+
+    public boolean useCompatSurface() {
+        return this.vout != VOUT_ANDROID_WINDOW;
     }
 
     public boolean timeStretchingEnabled() {
@@ -415,6 +440,8 @@ public class LibVLC {
              * Skip non-key (3) for all devices that don't meet anything above
              */
             LibVlcUtil.MachineSpecs m = LibVlcUtil.getMachineSpecs();
+            if (m == null)
+                return ret;
             if( (m.hasArmV6 && !(m.hasArmV7)) || m.hasMips )
                 ret = 4;
             else if(m.frequency >= 1200 && m.processors > 2)
@@ -439,8 +466,7 @@ public class LibVLC {
     }
 
     public void setChroma(String chroma) {
-        this.chroma = chroma.equals("YV12") && !LibVlcUtil
-                .isGingerbreadOrLater() ? "" : chroma;
+        this.chroma = chroma.equals("YV12") && !LibVlcUtil.isGingerbreadOrLater() ? "" : chroma;
     }
 
     public boolean isVerboseMode() {
@@ -574,7 +600,7 @@ public class LibVLC {
             return;
         String[] options = mMediaList.getMediaOptions(position);
         mInternalMediaPlayerIndex = position;
-        playMRL(mLibVlcInstance, mrl, options);
+        playMRL(mrl, options);
     }
 
     /**
@@ -586,25 +612,7 @@ public class LibVLC {
         // index=-1 will return options from libvlc instance without relying on MediaList
         String[] options = mMediaList.getMediaOptions(-1);
         mInternalMediaPlayerIndex = 0;
-        playMRL(mLibVlcInstance, mrl, options);
-    }
-
-    public TrackInfo[] readTracksInfo(String mrl) {
-        return readTracksInfo(mLibVlcInstance, mrl);
-    }
-
-    /**
-     * Get a media thumbnail.
-     */
-    public byte[] getThumbnail(String mrl, int i_width, int i_height) {
-        return getThumbnail(mLibVlcInstance, mrl, i_width, i_height);
-    }
-
-    /**
-     * Return true if there is a video track in the file
-     */
-    public boolean hasVideoTrack(String mrl) throws java.io.IOException {
-        return hasVideoTrack(mLibVlcInstance, mrl);
+        playMRL(mrl, options);
     }
 
     /**
@@ -651,7 +659,7 @@ public class LibVLC {
     /**
      * Play an mrl
      */
-    private native void playMRL(long instance, String mrl, String[] mediaOptions);
+    private native void playMRL(String mrl, String[] mediaOptions);
 
     /**
      * Returns true if any media is playing
@@ -747,14 +755,14 @@ public class LibVLC {
      * Get a media thumbnail.
      * @return a bytearray with the RGBA thumbnail data inside.
      */
-    private native byte[] getThumbnail(long instance, String mrl, int i_width, int i_height);
+    public native byte[] getThumbnail(String mrl, int i_width, int i_height);
 
     /**
      * Return true if there is a video track in the file
      */
-    private native boolean hasVideoTrack(long instance, String mrl);
+    public native boolean hasVideoTrack(String mrl) throws java.io.IOException;
 
-    private native TrackInfo[] readTracksInfo(long instance, String mrl);
+    public native TrackInfo[] readTracksInfo(String mrl);
 
     public native TrackInfo[] readTracksInfoInternal();
 
@@ -853,5 +861,13 @@ public class LibVLC {
     public native void setTitle(int title);
     public native int getChapterCountForTitle(int title);
     public native int getTitleCount();
+    public native void playerNavigate(int navigate);
 
+    public native String getMeta(int meta);
+
+    public native int setWindowSize(int width, int height);
+
+    /* MediaList */
+    protected native void loadPlaylist(String mrl, ArrayList<String> items);
+    protected native int expandMedia(int position, ArrayList<String> children);
 }

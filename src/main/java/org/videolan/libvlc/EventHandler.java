@@ -20,11 +20,11 @@
 
 package org.videolan.libvlc;
 
+import java.util.ArrayList;
+
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-
-import java.util.ArrayList;
 
 public class EventHandler {
 
@@ -32,7 +32,7 @@ public class EventHandler {
      * Be sure to subscribe to events you need in the JNI too.
      */
 
-    //public static final int MediaMetaChanged                = 0;
+    public static final int MediaMetaChanged                  = 0;
     //public static final int MediaSubItemAdded               = 1;
     //public static final int MediaDurationChanged            = 2;
     public static final int MediaParsedChanged                = 3;

@@ -20,13 +20,13 @@
 
 package org.videolan.libvlc;
 
-import android.graphics.Bitmap;
-import android.util.Log;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Locale;
+
+import android.graphics.Bitmap;
+import android.util.Log;
 
 public class Media implements Comparable<Media> {
     public final static String TAG = "VLC/LibVLC/Media";
@@ -111,6 +111,30 @@ public class Media implements Comparable<Media> {
     private String mTrackID;
     private String mArtworkURL;
 
+    public final static int libvlc_meta_Title       = 0;
+    public final static int libvlc_meta_Artist      = 1;
+    public final static int libvlc_meta_Genre       = 2;
+//    public final static int libvlc_meta_Copyright   = 3;
+    public final static int libvlc_meta_Album       = 4;
+//    public final static int libvlc_meta_TrackNumber = 5;
+//    public final static int libvlc_meta_Description = 6;
+//    public final static int libvlc_meta_Rating      = 7;
+//    public final static int libvlc_meta_Date        = 8;
+//    public final static int libvlc_meta_Setting     = 9;
+//    public final static int libvlc_meta_URL         = 10;
+//    public final static int libvlc_meta_Language    = 11;
+    public final static int libvlc_meta_NowPlaying  = 12;
+//    public final static int libvlc_meta_Publisher   = 13;
+//    public final static int libvlc_meta_EncodedBy   = 14;
+    public final static int libvlc_meta_ArtworkURL  = 15;
+//    public final static int libvlc_meta_TrackID     = 16;
+//    public final static int libvlc_meta_TrackTotal  = 17;
+//    public final static int libvlc_meta_Director    = 18;
+//    public final static int libvlc_meta_Season      = 19;
+//    public final static int libvlc_meta_Episode     = 20;
+//    public final static int libvlc_meta_ShowName    = 21;
+//    public final static int libvlc_meta_Actors      = 22;
+
     private final String mLocation;
     private String mFilename;
     private long mTime = 0;
@@ -158,6 +182,7 @@ public class Media implements Comparable<Media> {
                 mAlbum = getValueWrapper(track.Album, UnknownStringType.Album);
                 mGenre = getValueWrapper(track.Genre, UnknownStringType.Genre);
                 mArtworkURL = track.ArtworkURL;
+                mNowPlaying = track.NowPlaying;
                 Log.d(TAG, "Title " + mTitle);
                 Log.d(TAG, "Artist " + mArtist);
                 Log.d(TAG, "Genre " + mGenre);
@@ -167,10 +192,9 @@ public class Media implements Comparable<Media> {
 
         /* No useful ES found */
         if (mType == TYPE_ALL) {
-            int dotIndex = mLocation.lastIndexOf("");
+            int dotIndex = mLocation.lastIndexOf(".");
             if (dotIndex != -1) {
-                String fileExt = mLocation.substring(dotIndex).toLowerCase(
-                        Locale.ENGLISH);
+                String fileExt = mLocation.substring(dotIndex).toLowerCase(Locale.ENGLISH);
                 if( Media.VIDEO_EXTENSIONS.contains(fileExt) ) {
                     mType = TYPE_VIDEO;
                 } else if (Media.AUDIO_EXTENSIONS.contains(fileExt)) {
@@ -271,8 +295,13 @@ public class Media implements Comparable<Media> {
         return mLocation;
     }
 
-    public void updateMeta() {
-
+    public void updateMeta(LibVLC libVLC) {
+        mTitle = libVLC.getMeta(libvlc_meta_Title);
+        mArtist = getValueWrapper(libVLC.getMeta(libvlc_meta_Artist), UnknownStringType.Artist);
+        mGenre = getValueWrapper(libVLC.getMeta(libvlc_meta_Genre), UnknownStringType.Genre);
+        mAlbum = getValueWrapper(libVLC.getMeta(libvlc_meta_Album), UnknownStringType.Album);
+        mNowPlaying = libVLC.getMeta(libvlc_meta_NowPlaying);
+        mArtworkURL = libVLC.getMeta(libvlc_meta_ArtworkURL);
     }
 
     public String getFileName() {
@@ -337,7 +366,7 @@ public class Media implements Comparable<Media> {
     /**
      * Sets the raw picture object.
      *
-     * In VLC for Android, use {@link org.videolan.vlc.MediaDatabase#setPicture(Media, android.graphics.Bitmap)} instead.
+     * In VLC for Android, use {@link org.videolan.vlc.MediaDatabase#setPicture(Media, Bitmap)} instead.
      *
      * @param p
      */
@@ -360,7 +389,7 @@ public class Media implements Comparable<Media> {
             String fileName = getFileName();
             if (fileName == null)
                 return "";
-            int end = fileName.lastIndexOf("");
+            int end = fileName.lastIndexOf(".");
             if (end <= 0)
                 return fileName;
             return fileName.substring(0, end);
@@ -368,19 +397,26 @@ public class Media implements Comparable<Media> {
     }
 
     public String getSubtitle() {
-        return mType != TYPE_VIDEO ? mArtist + " - " + mAlbum : "";
+        return mType != TYPE_VIDEO ?
+                mNowPlaying != null ?
+                        mNowPlaying
+                        : mArtist + " - " + mAlbum
+                : "";
     }
 
     public String getArtist() {
         return mArtist;
     }
 
+    public Boolean isArtistUnknown() {
+        return (mArtist.equals(getValueWrapper(null, UnknownStringType.Artist)));
+    }
+
     public String getGenre() {
         if(getValueWrapper(null, UnknownStringType.Genre).equals(mGenre))
             return mGenre;
         else if( mGenre.length() > 1)/* Make genres case insensitive via normalisation */
-            return Character.toUpperCase(mGenre.charAt(0)) + mGenre.substring(1).toLowerCase(
-                    Locale.getDefault());
+            return Character.toUpperCase(mGenre.charAt(0)) + mGenre.substring(1).toLowerCase(Locale.getDefault());
         else
             return mGenre;
     }
@@ -391,6 +427,10 @@ public class Media implements Comparable<Media> {
 
     public String getAlbum() {
         return mAlbum;
+    }
+
+    public Boolean isAlbumUnknown() {
+        return (mAlbum.equals(getValueWrapper(null, UnknownStringType.Album)));
     }
 
     public String getTrackNumber() {
