@@ -50,5 +50,4 @@ public class TrackInfo {
     public String Album;
     public String Genre;
     public String ArtworkURL;
-    public String NowPlaying;
 }
